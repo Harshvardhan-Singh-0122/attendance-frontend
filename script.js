@@ -1,184 +1,254 @@
-// ===== Session Handling =====
-let sessionId = localStorage.getItem("attendance_session");
+const STORAGE_KEYS = {
+  attendance: "attendance_records_v2",
+  originalAttendance: "attendance_original_records_v2",
+};
 
-let originalAggregate = null;
-let simulatedAggregate = null;
-
-if (!sessionId) {
-  sessionId = crypto.randomUUID();
-  localStorage.setItem("attendance_session", sessionId);
+function readRecords(key = STORAGE_KEYS.attendance) {
+  try {
+    return JSON.parse(localStorage.getItem(key)) || [];
+  } catch {
+    return [];
+  }
 }
 
-// const API = "http://localhost:5000/api";
-// const API = "https://attendance-backend-production-8499.up.railway.app/api";
-const API = "https://attendance-backend-4e2h.onrender.com/api";
+function writeRecords(records, key = STORAGE_KEYS.attendance) {
+  localStorage.setItem(key, JSON.stringify(records));
+}
 
+function hasAttendanceData() {
+  return readRecords().length > 0;
+}
 
-// async function submitData() {
-//   const pastedText = document.getElementById("pasteBox").value;
-//   const file = document.getElementById("file").files[0];
+function calculatePercentage(attended, total) {
+  if (!total) return 0;
+  return Number(((attended / total) * 100).toFixed(2));
+}
 
-//   if (!pastedText && !file) {
-//     alert("Paste ERP report or upload file");
-//     return;
-//   }
+function calculateRiskLevel(percentage) {
+  if (percentage < 65) return "RED";
+  if (percentage < 75) return "YELLOW";
+  return "GREEN";
+}
 
-//   const formData = new FormData();
+function calculateSafeMiss(attended, total) {
+  const minimum = 75;
+  const classes = Math.floor((100 * attended - minimum * total) / minimum);
+  return Math.max(0, classes);
+}
 
-//   if (pastedText) {
-//     formData.append("text", pastedText);
-//   } else {
-//     formData.append("file", file);
-//   }
+function normalizeRecord(record) {
+  const percentage = calculatePercentage(record.attended, record.total);
 
-//   // await fetch(API + "/upload", {
-//   //   method: "POST",
-//   //   body: formData,
-//   // });
+  return {
+    id: record.id || crypto.randomUUID(),
+    subjectCode: record.subjectCode || "",
+    subjectName: record.subjectName || "Unknown Subject",
+    subjectType: record.subjectType || "",
+    attended: Number(record.attended) || 0,
+    total: Number(record.total) || 0,
+    percentage,
+    riskLevel: calculateRiskLevel(percentage),
+  };
+}
 
-//   formData.append("sessionId", sessionId);
-//   await fetch(API + "/upload", {
-//     method: "POST",
-//     body: formData
-//   });
+function parseAttendanceText(rawText) {
+  const raw = rawText.trim();
+  const lines = raw.replace(/\r/g, "").split("\n");
 
-//   window.location.href = "dashboard.html";
-// }
+  const headerIndex = lines.findIndex(
+    (line) =>
+      line.includes("Subject Code") &&
+      line.includes("Present") &&
+      line.includes("Absent"),
+  );
 
-// async function submitData() {
-//   const pastedText = document.getElementById("pasteBox").value;
-//   const file = document.getElementById("file").files[0];
+  if (headerIndex === -1) {
+    throw new Error("Invalid ERP attendance format.");
+  }
 
-//   if (!pastedText && !file) {
-//     alert("Paste ERP report or upload file");
-//     return;
-//   }
+  const parsed = lines
+    .slice(headerIndex + 1)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => line.split("\t"))
+    .filter((columns) => columns.length >= 8)
+    .map((columns) => {
+      const attended =
+        Number(columns[4] || 0) +
+        Number(columns[5] || 0) +
+        Number(columns[6] || 0);
+      const total = attended + Number(columns[7] || 0);
 
-//   // 🔥 SHOW LOADER
-//   document.getElementById("loader").classList.remove("hidden");
+      return normalizeRecord({
+        subjectCode: columns[1],
+        subjectName: columns[2],
+        subjectType: columns[3],
+        attended,
+        total,
+      });
+    })
+    .filter((record) => record.subjectName && record.total > 0);
 
-//   // Disable button to prevent double click
-//   const btn = document.querySelector(".primary-btn");
-//   btn.disabled = true;
-//   btn.innerText = "Processing...";
+  if (!parsed.length) {
+    throw new Error("No valid attendance rows were found.");
+  }
 
-//   const formData = new FormData();
+  return parsed;
+}
 
-//   if (pastedText) {
-//     formData.append("text", pastedText);
-//   } else {
-//     formData.append("file", file);
-//   }
+function getSortedRecords() {
+  const priority = { RED: 1, YELLOW: 2, GREEN: 3 };
 
-//   formData.append("sessionId", sessionId);
+  return readRecords().sort((a, b) => {
+    if (priority[a.riskLevel] !== priority[b.riskLevel]) {
+      return priority[a.riskLevel] - priority[b.riskLevel];
+    }
+    return a.percentage - b.percentage;
+  });
+}
 
-//   try {
-//     await fetch(API + "/upload", {
-//       method: "POST",
-//       body: formData,
-//     });
+function getAggregate(records = readRecords()) {
+  const attended = records.reduce((sum, record) => sum + record.attended, 0);
+  const total = records.reduce((sum, record) => sum + record.total, 0);
+  const percentage = calculatePercentage(attended, total);
 
-//     // Redirect after successful upload
-//     window.location.href = "dashboard.html";
-//   } catch (err) {
-//     alert("Something went wrong. Please try again.");
+  return {
+    attended,
+    total,
+    percentage,
+    riskLevel: calculateRiskLevel(percentage),
+  };
+}
 
-//     // Restore UI if error
-//     document.getElementById("loader").classList.add("hidden");
-//     btn.disabled = false;
-//     btn.innerText = "Process Attendance";
-//   }
-// }
+function saveAllRecords(records) {
+  writeRecords(records.map(normalizeRecord));
+}
 
-// async function submitData() {
-//   const pastedText = document.getElementById("pasteBox").value;
-//   const file = document.getElementById("file").files[0];
+function updateAggregateUI(aggregate) {
+  const attendedEl = document.getElementById("aggAttended");
+  const totalEl = document.getElementById("aggTotal");
+  const percentEl = document.getElementById("aggPercent");
+  const section = document.querySelector(".aggregate-section");
+  const circle = document.getElementById("aggCircle");
+  const badge = document.getElementById("aggBadge");
 
-//   if (!pastedText && !file) {
-//     alert("Paste ERP report or upload file");
-//     return;
-//   }
+  if (!attendedEl || !totalEl || !percentEl || !section || !circle) return;
 
-//   // 🔥 SHOW FULLSCREEN LOADER
-//   document.getElementById("fullscreenLoader").classList.remove("hidden");
+  attendedEl.innerText = aggregate.attended;
+  totalEl.innerText = aggregate.total;
+  percentEl.innerText = aggregate.percentage;
 
-//   const formData = new FormData();
+  section.className = "aggregate-section";
+  circle.className = "circle";
 
-//   if (pastedText) {
-//     formData.append("text", pastedText);
-//   } else {
-//     formData.append("file", file);
-//   }
+  if (aggregate.riskLevel === "RED") {
+    section.classList.add("agg-red");
+    circle.classList.add("red");
+  } else if (aggregate.riskLevel === "YELLOW") {
+    section.classList.add("agg-yellow");
+    circle.classList.add("yellow");
+  } else {
+    section.classList.add("agg-green");
+    circle.classList.add("green");
+  }
 
-//   formData.append("sessionId", sessionId);
+  if (badge) {
+    badge.innerText = `${aggregate.riskLevel} zone`;
+    badge.className = `agg-badge ${aggregate.riskLevel.toLowerCase()}`;
+  }
 
-//   try {
-//     await fetch(API + "/upload", {
-//       method: "POST",
-//       body: formData,
-//     });
+  updateMaintain75(aggregate);
+}
 
-//     // Redirect on success
-//     window.location.href = "dashboard.html";
-//   } catch (err) {
-//     alert("Something went wrong. Please try again.");
+function updateMaintain75(aggregate) {
+  const box = document.getElementById("maintainText");
+  if (!box) return;
 
-//     // Hide loader if error
-//     document.getElementById("fullscreenLoader").classList.add("hidden");
-//   }
-// }
+  if (!aggregate.total) {
+    box.innerText = "Paste attendance data to see your overview.";
+    return;
+  }
 
-// async function pasteAndSubmit() {
-//   try {
-//     // 🔐 Read clipboard (requires user click)
-//     const raw = await navigator.clipboard.readText();
-//     const text = raw.trim();
+  if (aggregate.percentage < 75) {
+    const needed = Math.ceil(
+      (75 * aggregate.total - 100 * aggregate.attended) / 25,
+    );
+    box.innerText = `Attend ${needed} more classes to reach 75%.`;
+    return;
+  }
 
+  const canMiss = calculateSafeMiss(aggregate.attended, aggregate.total);
+  box.innerText = `You can safely miss ${canMiss} classes and stay at 75% or above.`;
+}
 
-//     const btn = document.querySelector(".paste-btn");
-//     btn.disabled = true;
-//     btn.innerText = "Processing…";
+function updateSubjectRow(record) {
+  const row = document.querySelector(`tr[data-id="${record.id}"]`);
+  if (!row) return;
 
-//     if (!text || text.trim().length < 20) {
-//       alert("Clipboard is empty or does not contain attendance data.");
-//       return;
-//     }
+  row.children[1].innerText = `${record.percentage}%`;
+  row.children[2].innerText = record.attended;
+  row.children[3].innerText = record.total - record.attended;
+  row.children[4].innerText = record.total;
+  row.children[5].innerHTML = `
+    ${calculateSafeMiss(record.attended, record.total)}
+    <span class="safe-miss-note">classes</span>
+  `;
 
-//     // Show fullscreen loader
-//     document.getElementById("fullscreenLoader").classList.remove("hidden");
+  row.className = "";
+  row.classList.add(record.riskLevel.toLowerCase());
+}
 
-//     const formData = new FormData();
-//     formData.append("text", text);
-//     formData.append("sessionId", sessionId);
+function renderTable(records) {
+  const tbody = document.getElementById("tableBody");
+  const emptyState = document.getElementById("emptyState");
+  if (!tbody) return;
 
-//     // await fetch(API + "/upload", {
-//     //   method: "POST",
-//     //   body: formData,
-//     // });
+  tbody.innerHTML = "";
 
-//     const controller = new AbortController();
-//     const timeoutId = setTimeout(() => controller.abort(), 20000); // 20s
+  if (!records.length) {
+    if (emptyState) emptyState.hidden = false;
+    return;
+  }
 
-//     await fetch(API + "/upload", {
-//       method: "POST",
-//       body: formData,
-//       signal: controller.signal,
-//     });
+  if (emptyState) emptyState.hidden = true;
 
-//     clearTimeout(timeoutId);
+  records.forEach((record) => {
+    const row = document.createElement("tr");
+    row.dataset.id = record.id;
+    row.classList.add(record.riskLevel.toLowerCase());
 
-//     // Redirect on success
-//     window.location.href = "dashboard.html";
-//   } catch (err) {
-//     console.error("Clipboard error:", err);
-//     alert("Unable to read clipboard. Please allow clipboard access.");
+    row.innerHTML = `
+      <td data-label="Subject">${record.subjectName}</td>
+      <td data-label="%">${record.percentage}%</td>
+      <td data-label="Attended">${record.attended}</td>
+      <td data-label="Absent">${record.total - record.attended}</td>
+      <td data-label="Total">${record.total}</td>
+      <td data-label="Safe Miss">
+        ${calculateSafeMiss(record.attended, record.total)}
+        <span class="safe-miss-note">classes</span>
+      </td>
+      <td data-label="Target" class="target-cell">
+        <div class="target-input-small">
+          <input type="number" id="target-${record.id}" placeholder="%" />
+          <button class="calc-btn" onclick="calculateTarget('${record.id}')">Calc</button>
+        </div>
+        <div class="target-result" id="result-${record.id}"></div>
+      </td>
+    `;
 
-//     document.getElementById("fullscreenLoader").classList.add("hidden");
-//   }
-// }
+    tbody.appendChild(row);
+  });
+}
+
+function refreshDashboard() {
+  const records = getSortedRecords();
+  renderTable(records);
+  updateAggregateUI(getAggregate(records));
+}
 
 async function pasteAndSubmit() {
-  const btn = document.querySelector(".paste-btn");
+  const button = document.querySelector(".paste-btn");
+  const loader = document.getElementById("fullscreenLoader");
 
   try {
     const raw = await navigator.clipboard.readText();
@@ -189,415 +259,74 @@ async function pasteAndSubmit() {
       return;
     }
 
-    btn.disabled = true;
-    btn.innerText = "Processing…";
-    document.getElementById("fullscreenLoader").classList.remove("hidden");
-
-    const formData = new FormData();
-    formData.append("text", text);
-    formData.append("sessionId", sessionId);
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 20000);
-
-    const res = await fetch(API + "/upload", {
-      method: "POST",
-      body: formData,
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    const data = await res.json();
-
-    if (!res.ok) {
-      throw new Error(data.error || "Upload failed");
+    if (button) {
+      button.disabled = true;
+      button.innerText = "Processing...";
     }
+
+    if (loader) loader.classList.remove("hidden");
+
+    const records = parseAttendanceText(text);
+    writeRecords(records, STORAGE_KEYS.originalAttendance);
+    saveAllRecords(records);
 
     window.location.href = "dashboard.html";
-  } catch (err) {
-    console.error("Upload error:", err);
-
+  } catch (error) {
+    console.error("Paste failed:", error);
     alert(
-      "Attendance upload failed.\n" +
-      "Please check ERP format or try again on stable network."
+      error instanceof Error
+        ? error.message
+        : "Unable to read clipboard. Please allow clipboard access and try again.",
     );
 
-    document.getElementById("fullscreenLoader").classList.add("hidden");
-    btn.disabled = false;
-    btn.innerText = "Paste Attendance & Calculate";
-  }
-}
+    if (loader) loader.classList.add("hidden");
 
-
-async function load() {
-  const tbody = document.getElementById("tableBody");
-  tbody.innerHTML = "";
-
-  // fetch attendance
-  // const res = await fetch(API + "/attendance");
-  const res = await fetch(`${API}/attendance?sessionId=${sessionId}`);
-  const data = await res.json();
-
-  // risk priority (frontend enforced)
-  const priority = { RED: 1, YELLOW: 2, GREEN: 3 };
-  data.sort((a, b) => {
-    if (priority[a.riskLevel] !== priority[b.riskLevel]) {
-      return priority[a.riskLevel] - priority[b.riskLevel];
+    if (button) {
+      button.disabled = false;
+      button.innerText = "Paste Attendance & Calculate";
     }
-    return a.percentage - b.percentage;
-  });
-
-  // // safe miss map
-  // let safeMissMap = {};
-  // try {
-  //   const smRes = await fetch(API + "/attendance/safe-miss");
-  //   const smData = await smRes.json();
-  //   smData.forEach(s => safeMissMap[s._id] = s.safeMiss);
-  // } catch {}
-
-  data.forEach((d) => {
-    const row = document.createElement("tr");
-    row.dataset.id = d._id;
-
-    row.classList.add(
-      d.percentage < 65 ? "red" : d.percentage < 75 ? "yellow" : "green",
-    );
-
-    row.innerHTML = `
-      <td data-label="Subject">${d.subjectName}</td>
-      <td data-label="%">${d.percentage}%</td>
-      <td data-label="Attended">${d.attended}</td>
-      <td data-label="Absent">${d.total - d.attended}</td>
-      <td data-label="Total">${d.total}</td>
-      <td data-label="Safe Miss">
-        ${calculateSafeMiss(d.attended, d.total)}
-        <span class="safe-miss-note">classes</span>
-      </td>
-
-      <td data-label="Simulator" class="action-cell">
-        <button class="action-btn attend-btn" data-id="${d._id}">Attend</button>
-        <button class="action-btn miss-btn" data-id="${d._id}">Miss</button>
-
-      </td>
-      <td data-label="Target" class="target-cell">
-        <div class="target-input-small">
-          <input type="number" id="target-${d._id}" placeholder="%" />
-          <button class="calc-btn" onclick="calculateTarget('${d._id}')">Calc</button>
-        </div>
-        <div class="target-result" id="result-${d._id}"></div>
-      </td>
-    `;
-
-    tbody.appendChild(row);
-    row.querySelector(".attend-btn").addEventListener("click", () => {
-      simulateAttend(d._id);
-    });
-
-    row.querySelector(".miss-btn").addEventListener("click", () => {
-      simulateMiss(d._id);
-    });
-  });
-
-  await loadAggregate();
+  }
 }
 
-function calculateSafeMiss(attended, total) {
-  const min = 75;
-  let m = Math.floor((100 * attended - min * total) / min);
-  return m < 0 ? 0 : m;
-}
-
-// async function simulateAttend(id) {
-//   const res = await fetch(API + "/simulate/attend", {
-//     method: "POST",
-//     headers: { "Content-Type": "application/json" },
-//     body: JSON.stringify({ sessionId }),
-//   });
-
-//   const updated = await res.json();
-//   updateRow(updated);
-//   await loadAggregate();
-// }
-
-// async function simulateAttend(id) {
-//   await fetch(API + "/simulate/attend", {
-//     method: "POST",
-//     headers: { "Content-Type": "application/json" },
-//     body: JSON.stringify({ sessionId, subjectId: id }),
-//   });
-
-//   // 🔥 SINGLE SOURCE OF TRUTH
-//   const data = await res.json();
-
-//   updateSubjectRow(data.subject);
-//   updateAggregateUI(data.aggregate);
-// }
-async function simulateAttend(id) {
-  const res = await fetch(API + "/simulate/attend", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sessionId, subjectId: id }),
-  });
-
-  if (!res.ok) {
-    console.error("Simulate attend failed");
+function load() {
+  if (!hasAttendanceData()) {
+    const aggregateSection = document.querySelector(".aggregate-section");
+    if (aggregateSection) aggregateSection.classList.add("is-empty");
+    renderTable([]);
+    updateAggregateUI(getAggregate([]));
     return;
   }
 
-  const data = await res.json();
-
-  updateSubjectRow(data.subject);
-  updateAggregateUI(data.aggregate);
+  refreshDashboard();
 }
 
-// async function simulateMiss(id) {
-//   const res = await fetch(API + "/simulate/miss", {
-//     method: "POST",
-//     headers: { "Content-Type": "application/json" },
-//     body: JSON.stringify({ sessionId }),
-//   });
-
-//   const updated = await res.json();
-//   updateRow(updated);
-//   await loadAggregate();
-// }
-
-// async function simulateMiss(id) {
-//   await fetch(API + "/simulate/miss", {
-//     method: "POST",
-//     headers: { "Content-Type": "application/json" },
-//     body: JSON.stringify({ sessionId, subjectId: id }),
-//   });
-
-//   // 🔥 RELOAD FROM DB
-//   const data = await res.json();
-
-//   updateSubjectRow(data.subject);
-//   updateAggregateUI(data.aggregate);
-// }
-
-async function simulateMiss(id) {
-  const res = await fetch(API + "/simulate/miss", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sessionId, subjectId: id }),
-  });
-
-  if (!res.ok) {
-    console.error("Simulate miss failed");
-    return;
-  }
-
-  const data = await res.json();
-
-  updateSubjectRow(data.subject);
-  updateAggregateUI(data.aggregate);
-}
-
-// async function loadAggregate() {
-//   // const res = await fetch(API + "/attendance/aggregate");
-//   const res = await fetch(`${API}/aggregate?sessionId=${sessionId}`);
-//   const agg = await res.json();
-
-//   // Fill values
-//   // document.getElementById("aggAttended").innerText = agg.totalAttended;
-//   // document.getElementById("aggTotal").innerText = agg.totalClasses;
-//   document.getElementById("aggAttended").innerText = agg.attended;
-//   document.getElementById("aggTotal").innerText = agg.total;
-//   document.getElementById("aggPercent").innerText = agg.percentage;
-
-//   // Reset classes
-//   const section = document.querySelector(".aggregate-section");
-//   const circle = document.getElementById("aggCircle");
-
-//   section.className = "aggregate-section";
-//   circle.className = "circle";
-
-//   // Apply color by risk
-//   if (agg.riskLevel === "GREEN") {
-//     section.classList.add("agg-green");
-//     circle.classList.add("green");
-//   } else if (agg.riskLevel === "YELLOW") {
-//     section.classList.add("agg-yellow");
-//     circle.classList.add("yellow");
-//   } else {
-//     section.classList.add("agg-red");
-//     circle.classList.add("red");
-//   }
-// }
-
-// async function calculateAggregateTarget() {
-//   const target = Number(document.getElementById("aggTarget").value);
-
-//   if (!target) {
-//     alert("Enter target percentage");
-//     return;
-//   }
-
-//   const res = await fetch(API + "/target/aggregate", {
-//     method: "POST",
-//     headers: { "Content-Type": "application/json" },
-//     body: JSON.stringify({ target, sessionId }),
-//   });
-
-//   const data = await res.json();
-//   const box = document.getElementById("aggTargetResult");
-
-//   if (data.type === "invalid") {
-//     box.innerText = "Not achievable";
-//     box.style.color = "red";
-//   } else if (data.type === "attend") {
-//     box.innerText = `Attend ${data.value} more classes to reach ${target}%`;
-//     box.style.color = "blue";
-//   } else if (data.type === "miss") {
-//     box.innerText = `You can safely miss ${data.value} classes and maintain ${target}%`;
-//     box.style.color = "green";
-//   }
-// }
-
-async function loadAggregate() {
-  const res = await fetch(`${API}/aggregate?sessionId=${sessionId}`);
-  const agg = await res.json();
-
-  // store original only once
-  originalAggregate = {
-    attended: agg.attended,
-    total: agg.total,
-    percentage: agg.percentage,
-    riskLevel: agg.riskLevel,
-  };
-
-  // initialize simulated state
-  simulatedAggregate = { ...originalAggregate };
-
-  updateAggregateUI(simulatedAggregate);
-}
-
-async function calculateAggregateTarget() {
-  const target = Number(document.getElementById("aggTarget").value);
-  if (!target) {
-    alert("Enter target percentage");
-    return;
-  }
-
-  const res = await fetch(API + "/target/aggregate", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ target, sessionId }),
-  });
-
-  const data = await res.json();
-  const box = document.getElementById("aggTargetResult");
-
-  if (data.type === "invalid") {
-    box.innerText = "Not achievable";
-    box.style.color = "red";
-  } else if (data.type === "attend") {
-    box.innerText = `Attend ${data.value} more classes to reach ${target}%`;
-    box.style.color = "blue";
-  } else if (data.type === "miss") {
-    box.innerText = `You can safely miss ${data.value} classes and maintain ${target}%`;
-    box.style.color = "green";
-  }
-}
-
-// async function resetAttendance() {
-//   const confirmReset = confirm(
-//     "This will reset attendance to the originally uploaded data. Continue?"
-//   );
-
-//   if (!confirmReset) return;
-
-//   await fetch(API + "/attendance/reset", {
-//     method: "POST",
-//     headers: { "Content-Type": "application/json" },
-//     body: JSON.stringify({ sessionId }),
-//   });
-
-//   await load();
-// }
-
-// function updateRow(d) {
-//   const rows = document.querySelectorAll("#tableBody tr");
-
-//   rows.forEach(row => {
-//     if (row.dataset.id === d._id) {
-
-//       row.children[1].innerText = `${d.percentage}%`;
-//       row.children[2].innerText = d.attended;
-//       row.children[3].innerText = d.total - d.attended;
-//       row.children[4].innerText = d.total;
-
-//       // const min = 75;
-//       // let m = Math.floor((100 * d.attended - min * d.total) / min);
-//       // if (m < 0) m = 0;
-//       // row.children[5].innerText = m;
-
-//       row.children[5].innerText = calculateSafeMiss(d.attended, d.total);
-
-//       row.classList.remove("red", "yellow", "green");
-//       row.classList.add(
-//         d.percentage < 65 ? "red" :
-//         d.percentage < 75 ? "yellow" :
-//         "green"
-//       );
-//     }
-//   });
-// }
-
-// async function updateAggregateOnly() {
-//   // const res = await fetch(API + "/attendance/aggregate");
-//   const res = await fetch(API + "/aggregate");
-//   const agg = await res.json();
-
-//   document.getElementById("aggAttended").innerText = agg.totalAttended;
-//   document.getElementById("aggTotal").innerText = agg.totalClasses;
-//   document.getElementById("aggPercent").innerText = agg.percentage;
-
-//   const section = document.querySelector(".aggregate-section");
-//   const circle = document.getElementById("aggCircle");
-
-//   section.className = "aggregate-section";
-//   circle.className = "circle";
-
-//   if (agg.riskLevel === "GREEN") {
-//     section.classList.add("agg-green");
-//     circle.classList.add("green");
-//   } else if (agg.riskLevel === "YELLOW") {
-//     section.classList.add("agg-yellow");
-//     circle.classList.add("yellow");
-//   } else {
-//     section.classList.add("agg-red");
-//     circle.classList.add("red");
-//   }
-// }
-
-async function resetAttendance() {
-  const confirmReset = confirm(
-    "This will reset attendance to the originally uploaded data. Continue?",
+function resetAttendance() {
+  const confirmed = confirm(
+    "This will reset attendance to the original pasted data. Continue?",
   );
 
-  if (!confirmReset) return;
+  if (!confirmed) return;
 
-  await fetch(API + "/attendance/reset", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sessionId }),
-  });
+  const originalRecords = readRecords(STORAGE_KEYS.originalAttendance);
 
-  // 🔥 Restore frontend simulation state
-  simulatedAggregate = { ...originalAggregate };
-  updateAggregateUI(simulatedAggregate);
+  if (!originalRecords.length) {
+    alert("No original attendance data is available to restore.");
+    return;
+  }
 
-  await load();
+  saveAllRecords(originalRecords);
+  refreshDashboard();
+
+  const result = document.getElementById("whatIfResult");
+  if (result) result.innerText = "";
 }
 
 function calculateTarget(id) {
   const input = document.getElementById(`target-${id}`);
   const resultBox = document.getElementById(`result-${id}`);
+  const record = readRecords().find((item) => item.id === id);
 
-  if (!input || !resultBox) return;
+  if (!input || !resultBox || !record) return;
 
   const target = Number(input.value);
   if (!target || target <= 0) {
@@ -610,229 +339,111 @@ function calculateTarget(id) {
     return;
   }
 
-  // get current row values
-  const row = document.querySelector(`tr[data-id="${id}"]`);
-  if (!row) return;
+  const currentPercent = calculatePercentage(record.attended, record.total);
 
-  const attended = Number(row.children[2].innerText);
-  const total = Number(row.children[4].innerText);
-
-  const currentPercent = (attended / total) * 100;
-
-  // 🎯 CASE 1: Need to ATTEND more classes
   if (target > currentPercent) {
-    const k = Math.ceil((target * total - 100 * attended) / (100 - target));
-
-    resultBox.innerText = k <= 0 ? "Already safe" : `Attend ${k} more classes`;
-    return;
-  }
-
-  // 🎯 CASE 2: Can MISS classes safely
-  if (target < currentPercent) {
-    let m = Math.floor((100 * attended - target * total) / target);
-    if (m < 0) m = 0;
-
+    const needed = Math.ceil(
+      (target * record.total - 100 * record.attended) / (100 - target),
+    );
     resultBox.innerText =
-      m === 0 ? "Do not miss further" : `Can miss ${m} classes`;
+      needed <= 0 ? "Already safe" : `Attend ${needed} more classes`;
     return;
   }
 
-  // 🎯 CASE 3: Exactly at target
+  if (target < currentPercent) {
+    const missable = Math.max(
+      0,
+      Math.floor((100 * record.attended - target * record.total) / target),
+    );
+    resultBox.innerText =
+      missable === 0 ? "Do not miss further" : `Can miss ${missable} classes`;
+    return;
+  }
+
   resultBox.innerText = "Exactly at target";
 }
 
-function updateSubjectRow(d) {
-  const row = document.querySelector(`tr[data-id="${d._id}"]`);
-  if (!row) return;
+function calculateAggregateTarget() {
+  const input = document.getElementById("aggTarget");
+  const resultBox = document.getElementById("aggTargetResult");
+  const aggregate = getAggregate();
 
-  row.children[1].innerText = `${d.percentage}%`;
-  row.children[2].innerText = d.attended;
-  row.children[3].innerText = d.total - d.attended;
-  row.children[4].innerText = d.total;
-  row.children[5].innerText = calculateSafeMiss(d.attended, d.total);
+  if (!input || !resultBox) return;
 
-  row.className = "";
-  row.classList.add(
-    d.percentage < 65 ? "red" : d.percentage < 75 ? "yellow" : "green",
-  );
-}
-
-// function updateAggregateUI(agg) {
-//   document.getElementById("aggAttended").innerText = agg.attended;
-//   document.getElementById("aggTotal").innerText = agg.total;
-//   document.getElementById("aggPercent").innerText = agg.percentage;
-
-//   const section = document.querySelector(".aggregate-section");
-//   const circle = document.getElementById("aggCircle");
-
-//   section.className = "aggregate-section";
-//   circle.className = "circle";
-
-//   if (agg.riskLevel === "GREEN") {
-//     section.classList.add("agg-green");
-//     circle.classList.add("green");
-//   } else if (agg.riskLevel === "YELLOW") {
-//     section.classList.add("agg-yellow");
-//     circle.classList.add("yellow");
-//   } else {
-//     section.classList.add("agg-red");
-//     circle.classList.add("red");
-//   }
-//   updateMaintain75(agg);
-// }
-
-function updateAggregateUI(agg) {
-  document.getElementById("aggAttended").innerText = agg.attended;
-  document.getElementById("aggTotal").innerText = agg.total;
-  document.getElementById("aggPercent").innerText = agg.percentage;
-
-  const section = document.querySelector(".aggregate-section");
-  const circle = document.getElementById("aggCircle");
-
-  section.className = "aggregate-section";
-  circle.className = "circle";
-
-  if (agg.percentage < 65) {
-    section.classList.add("agg-red");
-    circle.classList.add("red");
-  } else if (agg.percentage < 75) {
-    section.classList.add("agg-yellow");
-    circle.classList.add("yellow");
-  } else {
-    section.classList.add("agg-green");
-    circle.classList.add("green");
-  }
-
-  // 🔥 NOW IT WILL WORK
-  updateMaintain75(agg);
-}
-
-// function updateMaintain75(agg) {
-//   const A = agg.attended;
-//   const T = agg.total;
-//   const target = 75;
-
-//   const box = document.getElementById("maintainText");
-//   if (!box) return; // prevents silent failure
-//   if (T === 0) {
-//     box.innerText = "No attendance data";
-//     return;
-//   }
-
-//   const current = (A / T) * 100;
-
-//   if (current < target) {
-//     const need = Math.ceil((target * T - 100 * A) / (100 - target));
-//     box.innerText = `Attend ${need} more classes to maintain 75%`;
-//   } else {
-//     let canMiss = Math.floor((100 * A - target * T) / target);
-//     if (canMiss < 0) canMiss = 0;
-//     box.innerText = `You can safely miss ${canMiss} classes`;
-//   }
-// }
-
-// function calculateWhatIf() {
-//   const x = Number(document.getElementById("whatIfCount").value);
-//   const type = document.getElementById("whatIfType").value;
-//   const result = document.getElementById("whatIfResult");
-
-//   if (!x || x <= 0) {
-//     result.innerText = "Enter valid number of classes";
-//     return;
-//   }
-
-//   const A = Number(document.getElementById("aggAttended").innerText);
-//   const T = Number(document.getElementById("aggTotal").innerText);
-
-//   let newA = A;
-//   let newT = T + x;
-
-//   if (type === "attend") {
-//     newA += x;
-//   }
-
-//   const percent = ((newA / newT) * 100).toFixed(2);
-
-//   result.innerText = `Resulting Attendance: ${percent}%`;
-// }
-
-function updateMaintain75(agg) {
-  console.log("Maintain 75 called", agg);
-  const box = document.getElementById("maintainText");
-  if (!box) return;
-
-  const A = agg.attended;
-  const T = agg.total;
-  const target = 75;
-
-  if (T === 0) {
-    box.innerText = "--";
+  const target = Number(input.value);
+  if (!target || target <= 0) {
+    resultBox.innerText = "Enter target percentage.";
+    resultBox.style.color = "#b91c1c";
     return;
   }
 
-  const current = (A / T) * 100;
-
-  if (current < target) {
-    const need = Math.ceil((target * T - 100 * A) / (100 - target));
-    box.innerText = `Attend ${need} more classes to maintain 75%`;
-  } else {
-    const canMiss = Math.floor((100 * A - target * T) / target);
-    box.innerText = `You can safely miss ${canMiss} classes`;
+  if (target >= 100) {
+    resultBox.innerText = "Not achievable.";
+    resultBox.style.color = "#b91c1c";
+    return;
   }
+
+  if (aggregate.total === 0) {
+    resultBox.innerText = "Paste attendance data first.";
+    resultBox.style.color = "#b91c1c";
+    return;
+  }
+
+  if (aggregate.percentage < target) {
+    const needed = Math.ceil(
+      (target * aggregate.total - 100 * aggregate.attended) / (100 - target),
+    );
+    resultBox.innerText = `Attend ${needed} more classes to reach ${target}%.`;
+    resultBox.style.color = "#1d4ed8";
+    return;
+  }
+
+  const missable = Math.max(
+    0,
+    Math.floor((100 * aggregate.attended - target * aggregate.total) / target),
+  );
+  resultBox.innerText = `You can safely miss ${missable} classes and stay above ${target}%.`;
+  resultBox.style.color = "#166534";
 }
-
-// function calculateWhatIf() {
-//   const x = Number(document.getElementById("whatIfCount").value);
-//   const type = document.getElementById("whatIfType").value;
-//   const result = document.getElementById("whatIfResult");
-
-//   if (!x || x <= 0) {
-//     result.innerText = "Enter valid number of classes";
-//     return;
-//   }
-
-//   const A = Number(document.getElementById("aggAttended").innerText);
-//   const T = Number(document.getElementById("aggTotal").innerText);
-
-//   let newA = A;
-//   let newT = T + x;
-
-//   if (type === "attend") newA += x;
-
-//   const percent = ((newA / newT) * 100).toFixed(2);
-
-//   result.innerText = `Resulting Attendance: ${percent}%`;
-//   result.style.color = percent >= 75 ? "#166534" : "#dc2626";
-// }
 
 function calculateWhatIf() {
-  const x = Number(document.getElementById("whatIfCount").value);
-  const type = document.getElementById("whatIfType").value;
+  const count = Number(document.getElementById("whatIfCount")?.value);
+  const type = document.getElementById("whatIfType")?.value;
+  const result = document.getElementById("whatIfResult");
 
-  if (!x || x <= 0) return;
+  if (!result) return;
 
-  if (!simulatedAggregate) return;
-
-  if (type === "attend") {
-    simulatedAggregate.attended += x;
-    simulatedAggregate.total += x;
-  } else {
-    simulatedAggregate.total += x;
+  if (!count || count <= 0) {
+    result.innerText = "Enter a valid number of classes.";
+    result.style.color = "#b91c1c";
+    return;
   }
 
-  simulatedAggregate.percentage = Number(
-    ((simulatedAggregate.attended / simulatedAggregate.total) * 100).toFixed(2),
-  );
+  const base = getAggregate();
+  if (!base.total) {
+    result.innerText = "Paste attendance data first.";
+    result.style.color = "#b91c1c";
+    return;
+  }
 
-  updateAggregateUI(simulatedAggregate);
+  const preview = {
+    attended: type === "attend" ? base.attended + count : base.attended,
+    total: base.total + count,
+  };
+
+  preview.percentage = calculatePercentage(preview.attended, preview.total);
+  preview.riskLevel = calculateRiskLevel(preview.percentage);
+
+  updateAggregateUI(preview);
+
+  result.innerText =
+    type === "attend"
+      ? `If you attend ${count} more classes, your overall attendance becomes ${preview.percentage}%.`
+      : `If you miss ${count} classes, your overall attendance becomes ${preview.percentage}%.`;
+  result.style.color =
+    preview.riskLevel === "GREEN"
+      ? "#166534"
+      : preview.riskLevel === "YELLOW"
+        ? "#a16207"
+        : "#b91c1c";
 }
-
-
-// async function safeFetch(url, options, retries = 1) {
-//   try {
-//     return await fetch(url, options);
-//   } catch {
-//     if (retries > 0) return safeFetch(url, options, retries - 1);
-//     throw new Error("Network error");
-//   }
-// }

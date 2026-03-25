@@ -2,101 +2,90 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Attendance Calculator</title>
-
-    <!-- Font (same as dashboard) -->
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
-
     <link rel="stylesheet" href="style.css" />
   </head>
 
   <body>
-    <div class="container">
-      <!-- Header -->
-      <div class="topbar">
-        <div>
-          <h1>Attendance Calculator</h1>
-          <p class="subtitle">Upload or paste your ERP attendance report</p>
+    <div class="page-shell">
+      <div class="container">
+        <div class="topbar">
+          <div>
+            <h1>Attendance Calculator</h1>
+            <p class="subtitle">
+              Built for quick mobile attendance checks
+            </p>
+          </div>
         </div>
+
+        <section class="hero-card mobile-hero">
+          <span class="eyebrow">Paste from ERP</span>
+          <h2>Copy your attendance table and open the dashboard in one tap.</h2>
+          <p>
+            No upload screen, no backend delay, and no extra steps. Just copy
+            from ERP and calculate instantly.
+          </p>
+
+          <div class="hero-strip">
+            <span>Mobile-first flow</span>
+            <span>Instant result</span>
+            <span>Simple dashboard</span>
+          </div>
+        </section>
+
+        <section class="upload-card">
+          <div class="paste-action">
+            <button class="primary-btn paste-btn" onclick="pasteAndSubmit()">
+              Paste Attendance & Calculate
+            </button>
+            <p class="paste-hint">
+              Copy the full attendance table from ERP, then tap the button above.
+            </p>
+          </div>
+
+          <ol class="paste-steps compact-steps">
+            <li>Open the ERP attendance page.</li>
+            <li>Copy the full attendance table.</li>
+            <li>Tap the button and view the dashboard.</li>
+          </ol>
+
+          <p class="note">Only the official ERP attendance text format is supported.</p>
+        </section>
       </div>
 
-      <!-- Main Upload Card -->
-      <section class="upload-card">
-        <!-- <h2>Upload Attendance Report</h2>
-
-        <p class="instruction">
-          You can either <strong>paste</strong> the attendance report copied
-          from ERP or <strong>upload</strong> the official CSV file.
-        </p> -->
-
-        <!-- Paste Box -->
-        <!-- <label class="section-label">Paste ERP Attendance Report</label>
-        <textarea
-          id="pasteBox"
-          placeholder="Paste the attendance report here..."
-        ></textarea> -->
-
-        <!-- Primary Paste Action -->
-        <div class="paste-action">
-          <button class="primary-btn paste-btn" onclick="pasteAndSubmit()">
-            Paste Attendance & Calculate
-          </button>
-
-          <p class="paste-hint">
-            Copy the attendance report from ERP, then tap the button above
-          </p>
+      <footer class="footer">
+        <div class="footer-content">
+          <div class="footer-title">Attendance Calculator</div>
+          <div class="footer-credit">
+            Designed & Developed by <strong>Harshvardhan Singh Dhannawat</strong>
+          </div>
+          <div class="footer-links">
+            <a
+              href="https://www.linkedin.com/in/harshvardhan-singh-dhannawat-694430219/"
+              target="_blank"
+              rel="noreferrer"
+              aria-label="LinkedIn Profile"
+            >
+              <img src="linkedin.svg" alt="LinkedIn" />
+            </a>
+          </div>
+          <div class="footer-note">(c) 2026 | Academic Project</div>
         </div>
-
-        <div class="divider">OR</div>
-
-        <!-- File Upload -->
-        <label class="section-label">Upload CSV File</label>
-        <input type="file" id="file" accept=".csv" />
-
-        <!-- Action Button -->
-        <button class="primary-btn" onclick="submitData()">
-          Process Attendance
-        </button>
-
-        <p class="note">Only official ERP attendance format is supported.</p>
-      </section>
+      </footer>
     </div>
 
-    <footer class="footer">
-      <div class="footer-content">
-        <div class="footer-title">Attendance Calculator</div>
-
-        <div class="footer-credit">
-          Designed & Developed by <strong>Harshvardhan Singh Dhannawat</strong>
-        </div>
-
-        <div class="footer-links">
-          <a
-            href="https://www.linkedin.com/in/harshvardhan-singh-dhannawat-694430219/"
-            target="_blank"
-            aria-label="LinkedIn Profile"
-          >
-            <img src="linkedin.svg" alt="LinkedIn" />
-          </a>
-        </div>
-
-        <div class="footer-note">© 2026 • Academic Project</div>
-      </div>
-    </footer>
-    <!-- Fullscreen Loader -->
     <div id="fullscreenLoader" class="fullscreen-loader hidden">
       <div class="loader-content">
         <div class="spinner"></div>
-        <p>Processing attendance…</p>
+        <p>Processing attendance...</p>
       </div>
     </div>
 
-    <script src="script.js">
-         fetch("https://attendance-backend-production-8499.up.railway.app/api/attendance?sessionId=ping")
-      .catch(() => {});
-    </script>
+    <script src="script.js"></script>
   </body>
 </html>
