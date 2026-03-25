@@ -501,7 +501,7 @@ thead th {
 .subjectCol{
   width: 25%;
 }
-.totalCol{
+.targetCol{
   width: 15%;
 }
 
@@ -865,7 +865,7 @@ tr.red td {
 .subjectCol{
   width: 25%;
 }
-.totalCol{
+.targetCol{
   width: 25%;
 }
 
