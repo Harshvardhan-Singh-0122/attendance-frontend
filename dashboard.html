@@ -15,7 +15,7 @@
     <div class="page-shell">
       <div class="container">
         <div class="topbar">
-          <div>
+          <div class="mainHeading">
             <h1>Attendance Dashboard</h1>
             <p class="subtitle">Quick subject-wise view for daily student use</p>
           </div>
@@ -102,19 +102,36 @@
           <a class="primary-link" href="index.html">Go to Paste Screen</a>
         </div>
 
+        <p><strong>Subjects</strong></p>
         <table id="table">
           <thead>
             <tr>
               <th class="subjectCol">Subject</th>
               <th class="SpecialCol">%</th>
-              <th class="SpecialCol">Attended</th>
-              <th class="SpecialCol">Absent</th>
+              <!-- <th class="SpecialCol">Attended</th> -->
+              <th class="SpecialCol">P</th>
+              <!-- <th class="SpecialCol">Absent</th> -->
+              <th class="SpecialCol">A</th>
               <th class="SpecialCol">Total</th>
-              <th class="SpecialCol">Safe Miss</th>
               <th class="targetCol">Target</th>
             </tr>
           </thead>
-          <tbody id="tableBody"></tbody>
+          <tbody id="subjectTableBody"></tbody>
+        </table>
+
+        <p><strong>Labs</strong></p>
+        <table id="labTable">
+          <thead>
+            <tr>
+              <th class="subjectCol">Subject</th>
+              <th class="SpecialCol">%</th>
+              <th class="SpecialCol">P</th>
+              <th class="SpecialCol">A</th>
+              <th class="SpecialCol">Total</th>
+              <th class="targetCol">Target</th>
+            </tr>
+          </thead>
+          <tbody id="labTableBody"></tbody>
         </table>
       </div>
 

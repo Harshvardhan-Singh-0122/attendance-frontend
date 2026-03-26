@@ -198,12 +198,37 @@ function updateSubjectRow(record) {
   row.classList.add(record.riskLevel.toLowerCase());
 }
 
-function renderTable(records) {
-  const tbody = document.getElementById("tableBody");
-  const emptyState = document.getElementById("emptyState");
-  if (!tbody) return;
+function createRecordRow(record) {
+  const row = document.createElement("tr");
+  row.dataset.id = record.id;
+  row.classList.add(record.riskLevel.toLowerCase());
 
-  tbody.innerHTML = "";
+  row.innerHTML = `
+    <td data-label="Subject" class="SubjectRow">${record.subjectName}</td>
+    <td data-label="%" class="SpecialRow">${record.percentage}%</td>
+    <td data-label="Attended" class="SpecialRow">${record.attended}</td>
+    <td data-label="Absent" class="SpecialRow">${record.total - record.attended}</td>
+    <td data-label="Total" class="SpecialRow">${record.total}</td>
+    <td data-label="Target" class="target-cell" class="TargetRow">
+      <div class="target-input-small">
+        <input type="number" id="target-${record.id}" placeholder="%" />
+        <button class="calc-btn" onclick="calculateTarget('${record.id}')">Calc</button>
+      </div>
+      <div class="target-result" id="result-${record.id}"></div>
+    </td>
+  `;
+
+  return row;
+}
+
+function renderTable(records) {
+  const subjectTbody = document.getElementById("subjectTableBody");
+  const labTbody = document.getElementById("labTableBody");
+  const emptyState = document.getElementById("emptyState");
+  if (!subjectTbody || !labTbody) return;
+
+  subjectTbody.innerHTML = "";
+  labTbody.innerHTML = "";
 
   if (!records.length) {
     if (emptyState) emptyState.hidden = false;
@@ -212,31 +237,17 @@ function renderTable(records) {
 
   if (emptyState) emptyState.hidden = true;
 
-  records.forEach((record) => {
-    const row = document.createElement("tr");
-    row.dataset.id = record.id;
-    row.classList.add(record.riskLevel.toLowerCase());
+  const subjectRecords = records.filter(
+    (record) => !/lab/i.test(record.subjectName),
+  );
+  const labRecords = records.filter((record) => /lab/i.test(record.subjectName));
 
-    row.innerHTML = `
-      <td data-label="Subject">${record.subjectName}</td>
-      <td data-label="%">${record.percentage}%</td>
-      <td data-label="Attended">${record.attended}</td>
-      <td data-label="Absent">${record.total - record.attended}</td>
-      <td data-label="Total">${record.total}</td>
-      <td data-label="Safe Miss">
-        ${calculateSafeMiss(record.attended, record.total)}
-        <span class="safe-miss-note">classes</span>
-      </td>
-      <td data-label="Target" class="target-cell">
-        <div class="target-input-small">
-          <input type="number" id="target-${record.id}" placeholder="%" />
-          <button class="calc-btn" onclick="calculateTarget('${record.id}')">Calc</button>
-        </div>
-        <div class="target-result" id="result-${record.id}"></div>
-      </td>
-    `;
+  subjectRecords.forEach((record) => {
+    subjectTbody.appendChild(createRecordRow(record));
+  });
 
-    tbody.appendChild(row);
+  labRecords.forEach((record) => {
+    labTbody.appendChild(createRecordRow(record));
   });
 }
 

@@ -818,6 +818,9 @@ tr.red td {
 }
 
 @media (max-width: 768px) {
+  .mainHeading{
+    text-align: center;
+  }
   .aggregate-stats-row {
     gap: 10px;
   }
@@ -867,12 +870,26 @@ tr.red td {
 }
 .targetCol{
   width: 25%;
+  text-align: center;
 }
 
   tbody td {
     padding: 9px 5px;
     font-size: 10px;
     line-height: 1.25;
+  }
+  .SubjectRow{
+    text-align: left;
+  }
+  .SpecialRow{
+    text-align: center;
+  }
+  .targetRow{
+    text-align: left;
+    padding-right: 5px;
+  }
+  tbody tr{
+    border-radius: 0%;
   }
 
   tbody td:first-child {
